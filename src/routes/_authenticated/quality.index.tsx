@@ -352,40 +352,81 @@ function QualityAdmin({ areas, onChanged }: { areas: Area[]; onChanged: () => vo
     return `${base || "copia"}-${suffix}`;
   };
 
+  function friendlyEntityError(error: { message?: string } | null, type: "area" | "setor", name: string) {
+    const message = error?.message ?? "";
+    if (message.includes("duplicate key") || message.includes("quality_areas_slug_key")) {
+      return `Já existe uma área com o nome "${name}". Use outro nome ou edite a área existente.`;
+    }
+    if (message.includes("quality_sectors") || message.includes("area_id_slug")) {
+      return `Já existe um setor com o nome "${name}" nesta área. Use outro nome ou edite o setor existente.`;
+    }
+    return message || `Não foi possível salvar este ${type}.`;
+  }
+
+  async function validateAreaName(name: string, currentId?: string) {
+    const slug = slugify(name);
+    if (!slug) return "Informe um nome com letras ou números.";
+    const { data, error } = await supabase.from("quality_areas").select("id").eq("slug", slug).maybeSingle();
+    if (error) return `Não foi possível validar o nome da área: ${error.message}`;
+    if (data && data.id !== currentId) return `Já existe uma área com o nome "${name}". Use outro nome ou edite a área existente.`;
+    return null;
+  }
+
+  async function validateSectorName(areaId: string, name: string, currentId?: string) {
+    const slug = slugify(name);
+    if (!slug) return "Informe um nome com letras ou números.";
+    const { data, error } = await supabase.from("quality_sectors").select("id").eq("area_id", areaId).eq("slug", slug).maybeSingle();
+    if (error) return `Não foi possível validar o nome do setor: ${error.message}`;
+    if (data && data.id !== currentId) return `Já existe um setor com o nome "${name}" nesta área. Use outro nome ou edite o setor existente.`;
+    return null;
+  }
+
   async function createEntity() {
     const name = createName.trim();
     if (!name) return toast.error("Informe um nome");
     if (createType === "area") {
+      const validationError = await validateAreaName(name);
+      if (validationError) return toast.error(validationError);
       const { error } = await supabase.from("quality_areas").insert({ name, slug: slugify(name), position: areas.length + 1 });
-      if (error) return toast.error(error.message);
+      if (error) return toast.error(friendlyEntityError(error, "area", name));
     } else {
       if (!createAreaId) return toast.error("Selecione a área");
+      const validationError = await validateSectorName(createAreaId, name);
+      if (validationError) return toast.error(validationError);
       const area = areas.find((a) => a.id === createAreaId);
       const { error } = await supabase.from("quality_sectors").insert({ area_id: createAreaId, name, slug: slugify(name), position: (area?.sectors?.length ?? 0) + 1 });
-      if (error) return toast.error(error.message);
+      if (error) return toast.error(friendlyEntityError(error, "setor", name));
     }
     setCreateName(""); onChanged();
   }
   async function renameArea(id: string, current: string) {
     const name = prompt("Novo nome da área", current)?.trim();
     if (!name || name === current) return;
+    const validationError = await validateAreaName(name, id);
+    if (validationError) return toast.error(validationError);
     const { error } = await supabase.from("quality_areas").update({ name, slug: slugify(name) }).eq("id", id);
-    if (error) return toast.error(error.message); onChanged();
+    if (error) return toast.error(friendlyEntityError(error, "area", name)); onChanged();
   }
   async function renameSector(id: string, current: string) {
     const name = prompt("Novo nome do setor", current)?.trim();
     if (!name || name === current) return;
+    const ownerArea = areas.find((area) => area.sectors?.some((item) => item.id === id));
+    if (!ownerArea) return toast.error("Não encontrei a área do setor para renomear.");
+    const validationError = await validateSectorName(ownerArea.id, name, id);
+    if (validationError) return toast.error(validationError);
     const { error } = await supabase.from("quality_sectors").update({ name, slug: slugify(name) }).eq("id", id);
-    if (error) return toast.error(error.message); onChanged();
+    if (error) return toast.error(friendlyEntityError(error, "setor", name)); onChanged();
   }
 
 
   async function addArea() {
     const name = newArea.trim();
     if (!name) return;
-    const slug = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const validationError = await validateAreaName(name);
+    if (validationError) return toast.error(validationError);
+    const slug = slugify(name);
     const { error } = await supabase.from("quality_areas").insert({ name, slug, position: areas.length + 1 });
-    if (error) return toast.error(error.message);
+    if (error) return toast.error(friendlyEntityError(error, "area", name));
     setNewArea(""); onChanged();
   }
   async function delArea(id: string) {
@@ -570,10 +611,12 @@ function QualityAdmin({ areas, onChanged }: { areas: Area[]; onChanged: () => vo
   async function addSector(areaId: string) {
     const name = (newSector[areaId] ?? "").trim();
     if (!name) return;
-    const slug = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const validationError = await validateSectorName(areaId, name);
+    if (validationError) return toast.error(validationError);
+    const slug = slugify(name);
     const area = areas.find((a) => a.id === areaId);
     const { error } = await supabase.from("quality_sectors").insert({ area_id: areaId, name, slug, position: (area?.sectors?.length ?? 0) + 1 });
-    if (error) return toast.error(error.message);
+    if (error) return toast.error(friendlyEntityError(error, "setor", name));
     setNewSector((m) => ({ ...m, [areaId]: "" })); onChanged();
   }
   async function delSector(id: string) {
