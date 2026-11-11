@@ -354,10 +354,10 @@ function QualityAdmin({ areas, onChanged }: { areas: Area[]; onChanged: () => vo
 
   function friendlyEntityError(error: { message?: string } | null, type: "area" | "setor", name: string) {
     const message = error?.message ?? "";
-    if (message.includes("duplicate key") || message.includes("quality_areas_slug_key")) {
+    if (type === "area" && (message.includes("duplicate key") || message.includes("quality_areas_slug_key"))) {
       return `Já existe uma área com o nome "${name}". Use outro nome ou edite a área existente.`;
     }
-    if (message.includes("quality_sectors") || message.includes("area_id_slug")) {
+    if (type === "setor" && (message.includes("duplicate key") || message.includes("quality_sectors") || message.includes("area_id_slug"))) {
       return `Já existe um setor com o nome "${name}" nesta área. Use outro nome ou edite o setor existente.`;
     }
     return message || `Não foi possível salvar este ${type}.`;
