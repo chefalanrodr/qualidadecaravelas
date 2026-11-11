@@ -1,0 +1,1 @@
+ALTER TABLE public.quality_sectors ADD COLUMN IF NOT EXISTS target_score numeric NOT NULL DEFAULT 80;
